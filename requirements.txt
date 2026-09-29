@@ -1,0 +1,17 @@
+document.addEventListener('DOMContentLoaded', () => {
+  const pills = document.querySelectorAll('.filter-pill');
+  const cards = document.querySelectorAll('.card');
+
+  pills.forEach((pill) => {
+    pill.addEventListener('click', () => {
+      pills.forEach((item) => item.classList.remove('active'));
+      pill.classList.add('active');
+
+      const selected = pill.dataset.filter;
+      cards.forEach((card) => {
+        const visible = selected === 'all' || card.dataset.category === selected;
+        card.style.display = visible ? 'block' : 'none';
+      });
+    });
+  });
+});

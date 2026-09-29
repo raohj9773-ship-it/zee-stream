@@ -1,0 +1,415 @@
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+from datetime import datetime
+import os
+import sqlite3
+import json
+import requests
+
+app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'change-me-please')
+
+ADMIN_USER = os.environ.get('ADMIN_USER', 'raozee')
+ADMIN_PASS = os.environ.get('ADMIN_PASS', 'raozee123456')
+TMDB_API_KEY = os.environ.get('TMDB_API_KEY', '')
+TMDB_BASE_URL = 'https://api.themoviedb.org/3'
+DEFAULT_BLOCKED = ['PK']
+
+DB_PATH = 'zee_stream.db'
+
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    conn = get_db()
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS media (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            slug TEXT UNIQUE,
+            description TEXT,
+            poster_url TEXT,
+            category TEXT,
+            language TEXT,
+            media_type TEXT,
+            source_type TEXT,
+            video_url TEXT,
+            download_url TEXT,
+            year INTEGER,
+            rating REAL,
+            popularity REAL,
+            tmdb_id INTEGER,
+            country TEXT,
+            is_featured INTEGER DEFAULT 0,
+            created_at TEXT,
+            updated_at TEXT
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    ''')
+
+    conn.execute(
+        "INSERT OR IGNORE INTO settings(key, value) VALUES('blocked_countries', ?)",
+        (json.dumps(DEFAULT_BLOCKED),)
+    )
+    conn.commit()
+    conn.close()
+
+
+def add_demo_entries():
+    conn = get_db()
+    rows = conn.execute('SELECT COUNT(*) AS c FROM media').fetchone()['c']
+    if rows > 0:
+        conn.close()
+        return
+
+    demo_items = [
+        {
+            'title': 'The Great Train Robbery',
+            'slug': 'the-great-train-robbery',
+            'description': 'A classic public-domain western with family-safe historical value.',
+            'poster_url': 'https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?auto=format&fit=crop&w=800&q=80',
+            'category': 'Classic',
+            'language': 'English',
+            'media_type': 'movie',
+            'source_type': 'demo',
+            'video_url': '',
+            'download_url': '',
+            'year': 1903,
+            'rating': 7.4,
+            'popularity': 72,
+            'tmdb_id': 0,
+            'country': 'US',
+            'is_featured': 1,
+        },
+        {
+            'title': 'Pride and Prejudice',
+            'slug': 'pride-and-prejudice',
+            'description': 'A classic romance and drama for family-friendly viewing.',
+            'poster_url': 'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=800&q=80',
+            'category': 'Romance',
+            'language': 'English',
+            'media_type': 'movie',
+            'source_type': 'demo',
+            'video_url': '',
+            'download_url': '',
+            'year': 2005,
+            'rating': 7.8,
+            'popularity': 70,
+            'tmdb_id': 0,
+            'country': 'UK',
+            'is_featured': 1,
+        },
+        {
+            'title': 'The Adventures of Sherlock Holmes',
+            'slug': 'the-adventures-of-sherlock-holmes',
+            'description': 'A timeless detective classic in the public domain.',
+            'poster_url': 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=800&q=80',
+            'category': 'Mystery',
+            'language': 'English',
+            'media_type': 'movie',
+            'source_type': 'demo',
+            'video_url': '',
+            'download_url': '',
+            'year': 1939,
+            'rating': 7.2,
+            'popularity': 68,
+            'tmdb_id': 0,
+            'country': 'US',
+            'is_featured': 0,
+        },
+        {
+            'title': 'A Trip to the Moon',
+            'slug': 'a-trip-to-the-moon',
+            'description': 'A historic film suitable for a family-safe archive collection.',
+            'poster_url': 'https://images.unsplash.com/photo-1478720568477-152d9b164e26?auto=format&fit=crop&w=800&q=80',
+            'category': 'Sci-Fi',
+            'language': 'English',
+            'media_type': 'movie',
+            'source_type': 'demo',
+            'video_url': '',
+            'download_url': '',
+            'year': 1902,
+            'rating': 7.5,
+            'popularity': 66,
+            'tmdb_id': 0,
+            'country': 'France',
+            'is_featured': 0,
+        },
+    ]
+
+    now = datetime.utcnow().isoformat()
+    for item in demo_items:
+        item['created_at'] = now
+        item['updated_at'] = now
+        conn.execute(
+            '''
+            INSERT INTO media (
+                title, slug, description, poster_url, category, language, media_type,
+                source_type, video_url, download_url, year, rating, popularity,
+                tmdb_id, country, is_featured, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                item['title'], item['slug'], item['description'], item['poster_url'], item['category'],
+                item['language'], item['media_type'], item['source_type'], item['video_url'], item['download_url'],
+                item['year'], item['rating'], item['popularity'], item['tmdb_id'], item['country'],
+                item['is_featured'], item['created_at'], item['updated_at']
+            )
+        )
+
+    conn.commit()
+    conn.close()
+
+
+init_db()
+add_demo_entries()
+
+
+def admin_required(func):
+    def wrapper(*args, **kwargs):
+        if not session.get('admin'):
+            return redirect(url_for('login'))
+        return func(*args, **kwargs)
+    wrapper.__name__ = func.__name__
+    return wrapper
+
+
+def get_settings():
+    conn = get_db()
+    rows = conn.execute('SELECT key, value FROM settings').fetchall()
+    conn.close()
+    settings = {}
+    for row in rows:
+        settings[row['key']] = row['value']
+    return settings
+
+
+def set_setting(key, value):
+    conn = get_db()
+    conn.execute('INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', (key, value))
+    conn.commit()
+    conn.close()
+
+
+def parse_blocked_countries():
+    try:
+        data = get_settings().get('blocked_countries', '[]')
+        return json.loads(data)
+    except Exception:
+        return []
+
+
+def normalize_category(value):
+    if not value:
+        return 'General'
+    return value.strip()
+
+
+def default_media_query():
+    conn = get_db()
+    rows = conn.execute('SELECT * FROM media ORDER BY is_featured DESC, year DESC, title ASC').fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_recent_tmdb():
+    if not TMDB_API_KEY:
+        return []
+    try:
+        url = f'{TMDB_BASE_URL}/movie/popular'
+        params = {'api_key': TMDB_API_KEY, 'language': 'en-US', 'page': 1}
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        results = response.json().get('results', [])
+        items = []
+        for item in results[:12]:
+            title = item.get('title') or item.get('name')
+            if not title:
+                continue
+            items.append({
+                'title': title,
+                'description': item.get('overview') or 'Family-safe entertainment recommendation.',
+                'poster_url': f"https://image.tmdb.org/t/p/w500{item.get('poster_path') or ''}",
+                'category': 'Popular',
+                'language': 'English',
+                'media_type': 'movie',
+                'source_type': 'tmdb',
+                'video_url': '',
+                'download_url': '',
+                'year': int((item.get('release_date') or '0000')[:4]) if item.get('release_date') else 0,
+                'rating': item.get('vote_average') or 0,
+                'popularity': item.get('popularity') or 0,
+                'tmdb_id': item.get('id'),
+                'country': 'Worldwide',
+                'is_featured': 1,
+            })
+        return items
+    except Exception:
+        return []
+
+
+def sync_tmdb_if_possible():
+    if not TMDB_API_KEY:
+        return
+
+    items = get_recent_tmdb()
+    if not items:
+        return
+
+    conn = get_db()
+    now = datetime.utcnow().isoformat()
+    for item in items:
+        slug = item['title'].strip().lower().replace(' ', '-')
+        conn.execute('''
+            INSERT OR REPLACE INTO media (
+                title, slug, description, poster_url, category, language, media_type,
+                source_type, video_url, download_url, year, rating, popularity,
+                tmdb_id, country, is_featured, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT created_at FROM media WHERE slug=?), ?), ?)
+        ''', (
+            item['title'], slug, item['description'], item['poster_url'], item['category'], item['language'],
+            item['media_type'], item['source_type'], item['video_url'], item['download_url'], item['year'],
+            item['rating'], item['popularity'], item['tmdb_id'], item['country'], item['is_featured'], slug, now, now
+        ))
+    conn.commit()
+    conn.close()
+
+
+@app.route('/')
+def index():
+    media = default_media_query()
+    categories = sorted({item['category'] for item in media if item.get('category')})
+    return render_template('index.html', media=media, categories=categories, admin=session.get('admin'))
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username', '')
+        password = request.form.get('password', '')
+        if username == ADMIN_USER and password == ADMIN_PASS:
+            session['admin'] = True
+            return redirect(url_for('admin'))
+        return render_template('login.html', error='Invalid username or password.')
+    return render_template('login.html', error=None)
+
+
+@app.route('/logout')
+def logout():
+    session.pop('admin', None)
+    return redirect(url_for('index'))
+
+
+@app.route('/admin')
+@admin_required
+def admin():
+    media = default_media_query()
+    categories = sorted({item['category'] for item in media if item.get('category')})
+    return render_template('admin.html', media=media, categories=categories)
+
+
+@app.route('/admin/add', methods=['POST'])
+@admin_required
+def admin_add():
+    title = request.form.get('title', '').strip()
+    if not title:
+        return redirect(url_for('admin'))
+
+    slug = title.lower().replace(' ', '-')
+    description = request.form.get('description', '').strip() or 'A family-safe title.'
+    category = normalize_category(request.form.get('category', 'General'))
+    language = request.form.get('language', 'English').strip() or 'English'
+    media_type = request.form.get('media_type', 'movie')
+    source_type = request.form.get('source_type', 'manual')
+    video_url = request.form.get('video_url', '').strip()
+    download_url = request.form.get('download_url', '').strip()
+    poster_url = request.form.get('poster_url', '').strip() or 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=900&q=80'
+    year = int(request.form.get('year', 0) or 0)
+    rating = float(request.form.get('rating', 0) or 0)
+    country = request.form.get('country', 'Worldwide').strip() or 'Worldwide'
+
+    conn = get_db()
+    conn.execute('''
+        INSERT INTO media (
+            title, slug, description, poster_url, category, language, media_type,
+            source_type, video_url, download_url, year, rating, popularity, tmdb_id,
+            country, is_featured, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0, ?, ?)
+    ''', (
+        title, slug, description, poster_url, category, language, media_type,
+        source_type, video_url, download_url, year, rating, country,
+        datetime.utcnow().isoformat(), datetime.utcnow().isoformat()
+    ))
+    conn.commit()
+    conn.close()
+
+    return redirect(url_for('admin'))
+
+
+@app.route('/api/media')
+def api_media():
+    media = default_media_query()
+    return jsonify({'items': media})
+
+
+@app.route('/api/categories')
+def api_categories():
+    media = default_media_query()
+    categories = sorted({item['category'] for item in media if item.get('category')})
+    return jsonify({'categories': categories})
+
+
+@app.route('/api/status')
+def api_status():
+    media = default_media_query()
+    settings = get_settings()
+    return jsonify({
+        'status': 'ok',
+        'total_items': len(media),
+        'blocked_countries': json.loads(settings.get('blocked_countries', '[]')),
+        'tmdb_configured': bool(TMDB_API_KEY),
+        'admin_user': ADMIN_USER,
+    })
+
+
+@app.route('/settings', methods=['GET', 'POST'])
+@admin_required
+def settings_page():
+    if request.method == 'POST':
+        blocked = request.form.get('blocked_countries', '').strip()
+        blocked_list = [c.strip().upper() for c in blocked.split(',') if c.strip()]
+        set_setting('blocked_countries', json.dumps(blocked_list))
+        return redirect(url_for('settings_page'))
+
+    settings = get_settings()
+    blocked = ', '.join(json.loads(settings.get('blocked_countries', '[]')))
+    return render_template('settings.html', blocked=blocked)
+
+
+@app.route('/sync-tmdb')
+@admin_required
+def sync_tmdb():
+    sync_tmdb_if_possible()
+    return redirect(url_for('admin'))
+
+
+@app.route('/media/<slug>')
+def media_detail(slug):
+    conn = get_db()
+    row = conn.execute('SELECT * FROM media WHERE slug = ?', (slug,)).fetchone()
+    conn.close()
+    if not row:
+        return redirect(url_for('index'))
+    return render_template('detail.html', item=dict(row))
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)

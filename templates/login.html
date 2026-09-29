@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Zee Stream</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand-wrap">
+        <div class="brand">ZEE STREAM</div>
+      </div>
+      <nav class="nav">
+        {% if admin %}
+          <a href="{{ url_for('admin') }}">Admin</a>
+          <a href="{{ url_for('logout') }}">Logout</a>
+        {% else %}
+          <a href="{{ url_for('login') }}">Login</a>
+        {% endif %}
+      </nav>
+    </header>
+
+    <main class="page">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Family-safe legal media</p>
+          <h1>Discover content in a clean catalog.</h1>
+          <p class="lead">Search categories, browse posters, and manage only approved legal media.</p>
+        </div>
+      </section>
+
+      <section class="filters">
+        <div class="filter-pill active" data-filter="all">All</div>
+        {% for category in categories %}
+          <div class="filter-pill" data-filter="{{ category }}">{{ category }}</div>
+        {% endfor %}
+      </section>
+
+      <section class="grid">
+        {% for item in media %}
+          <article class="card" data-category="{{ item.category }}">
+            <img src="{{ item.poster_url or 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=900&q=80' }}" alt="{{ item.title }}">
+            <div class="content">
+              <div class="meta-row">
+                <span>{{ item.language }}</span>
+                <span>{{ item.year or '' }}</span>
+              </div>
+              <h3>{{ item.title }}</h3>
+              <p>{{ item.description[:120] }}{% if item.description|length > 120 %}...{% endif %}</p>
+              <div class="actions">
+                <a class="button primary" href="{{ url_for('media_detail', slug=item.slug) }}">View</a>
+                {% if item.video_url %}
+                  <a class="button" href="{{ item.video_url }}" target="_blank" rel="noopener noreferrer">Watch</a>
+                {% endif %}
+                {% if item.download_url %}
+                  <a class="button" href="{{ item.download_url }}" target="_blank" rel="noopener noreferrer">Download</a>
+                {% endif %}
+              </div>
+            </div>
+          </article>
+        {% endfor %}
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>

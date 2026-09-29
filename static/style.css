@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Settings - Zee Stream</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand-wrap">
+        <div class="brand">ZEE STREAM</div>
+      </div>
+      <nav class="nav">
+        <a href="{{ url_for('admin') }}">Admin</a>
+        <a href="{{ url_for('logout') }}">Logout</a>
+      </nav>
+    </header>
+
+    <main class="page settings-page">
+      <h2>Site Settings</h2>
+      <form method="post" class="settings-form">
+        <label>Blocked countries (comma separated):</label>
+        <input type="text" name="blocked_countries" value="{{ blocked }}">
+        <button type="submit">Save</button>
+      </form>
+    </main>
+  </body>
+</html>

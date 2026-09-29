@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ item.title }} - Zee Stream</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand-wrap">
+        <div class="brand">ZEE STREAM</div>
+      </div>
+      <nav class="nav">
+        <a href="{{ url_for('index') }}">Back</a>
+      </nav>
+    </header>
+
+    <main class="page detail-page">
+      <section class="detail-header">
+        <img src="{{ item.poster_url or 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=900&q=80' }}" alt="{{ item.title }}">
+        <div class="detail-copy">
+          <p class="eyebrow">{{ item.category }} • {{ item.language }}</p>
+          <h1>{{ item.title }}</h1>
+          <p>{{ item.description }}</p>
+          <div class="detail-actions">
+            {% if item.video_url %}
+              <a class="button primary" href="{{ item.video_url }}" target="_blank" rel="noopener noreferrer">Watch</a>
+            {% endif %}
+            {% if item.download_url %}
+              <a class="button" href="{{ item.download_url }}" target="_blank" rel="noopener noreferrer">Download</a>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
